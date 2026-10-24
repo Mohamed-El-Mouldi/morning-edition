@@ -1,6 +1,6 @@
 import feedparser
 import json
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 FEEDS = {
@@ -21,18 +21,16 @@ def fetch_section(section, url, limit=5):
             "section":section,
             "source":feed.feed.title,
             "title":entry.title,
-            "link":entry.link,
-            "published":entry.get("published", ""),
+            "link": entry.link.split("?")[0],
+            "published": parse_date(entry),
         }
         articles.append(article)
-        pass
     return articles
 
 def fetch_all():
     all_articles = []
     for section, url in FEEDS.items():
         all_articles.extend(fetch_section(section, url))
-        pass
     return all_articles
 
 DATA_DIR = Path("data")
@@ -48,13 +46,38 @@ def load_articles(path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+def parse_date(entry):
+    """Return the entry's date as an ISO string, or "" if it has none."""
+    parsed=entry.get("published_parsed")
+    if not date:
+        return ""
+    return datetime(*parsed[:6], tzinfo=timezone.utc).isoformat()
+
+def remove_duplicates(articles):
+    """Keep only the first article for each link."""
+    seen = set()
+    unique = []
+    for article in articles:
+        if article["link"] not in seen:
+            seen.add(article["link"])
+            unique.append(article)
+    return unique
+
+def sort_newest_first(articles):
+    return sorted(articles, key=lambda a: a["published"], reverse=True)
+
 if __name__ == "__main__":
     articles = fetch_all()
+    before = len(articles)
+    articles = remove_duplicates(articles)
+    articles = sort_newest_first(articles)
+    print(f"Fetched {before}, removed {before - len(articles)} duplicates")
+
     path = DATA_DIR / f"{date.today().isoformat()}.json"
     save_articles(articles, path)
     print(f"Saved {len(articles)} articles to {path}")
 
-    # Check that it worked by reading the file back
     loaded = load_articles(path)
-    print(f"Loaded {len(loaded)} articles back. First one:")
-    print(loaded[0]["title"])
+    print("Newest three:")
+    for a in loaded[:3]:
+        print(f"  {a['published']}  [{a['section']}]  {a['title']}")
