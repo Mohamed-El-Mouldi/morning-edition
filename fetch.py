@@ -2,6 +2,8 @@ import feedparser
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
+import html
+import re
 
 FEEDS = {
     "world": "https://feeds.bbci.co.uk/news/world/rss.xml",
@@ -23,6 +25,7 @@ def fetch_section(section, url, limit=5):
             "title":entry.title,
             "link": entry.link.split("?")[0],
             "published": parse_date(entry),
+            "summary": clean_summary(entry),
         }
         articles.append(article)
     return articles
@@ -49,7 +52,7 @@ def load_articles(path):
 def parse_date(entry):
     """Return the entry's date as an ISO string, or "" if it has none."""
     parsed=entry.get("published_parsed")
-    if not date:
+    if not parsed:
         return ""
     return datetime(*parsed[:6], tzinfo=timezone.utc).isoformat()
 
@@ -66,6 +69,18 @@ def remove_duplicates(articles):
 def sort_newest_first(articles):
     return sorted(articles, key=lambda a: a["published"], reverse=True)
 
+def clean_summary(entry, max_chars=300):
+    """Return the entry's summary as plain text, or "" if it has none."""
+    summary=entry.get("summary", "")
+    if not summary:
+        return ""
+    summary=re.sub(r"<[^>]+>", "", summary)
+    summary=html.unescape(summary)
+    summary=" ".join(summary.split())
+    if len(summary)>max_chars:
+        summary=summary[:max_chars].rsplit(" ", 1)[0] + "…"
+    return summary
+
 if __name__ == "__main__":
     articles = fetch_all()
     before = len(articles)
@@ -81,3 +96,4 @@ if __name__ == "__main__":
     print("Newest three:")
     for a in loaded[:3]:
         print(f"  {a['published']}  [{a['section']}]  {a['title']}")
+        print(f"      {a['summary'][:100]}")
